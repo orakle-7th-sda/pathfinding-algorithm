@@ -1,2 +1,0 @@
-# 차트 생성용 (chart_*.py)
-matplotlib>=3.5.0
