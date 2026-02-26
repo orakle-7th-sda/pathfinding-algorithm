@@ -23,6 +23,35 @@ python3 main.py --extreme
 python3 main.py --all
 ```
 
+## Frame-By-Frame Replay (New)
+
+```bash
+cd routing-algorithms
+
+# 1) Generate replay traces
+python3 visualization/generate_traces.py --token-in ETH --token-out USDC --amount 250
+
+# 2) Serve local web
+python3 -m http.server 8000
+
+# 3) Open in browser
+# http://localhost:8000/visualization/replay_viewer.html
+```
+
+The replay viewer supports:
+- `Prev / Next / Play / Pause`
+- frame slider and speed control
+- graph-search replay (`Dijkstra`, `K-Best`)
+- split-optimization replay (`Greedy`, `Convex`, `KKT`)
+- frame diff highlight (distance/queue changed items only)
+
+Media export (GIF/MP4) is automatically attempted by `generate_traces.py`.
+If dependencies are missing:
+
+```bash
+pip install -r routing-algorithms/requirements.txt
+```
+
 ## Highlights
 
 - **15+ algorithms**: Aggregation, Single-path, Multi-path, DEX-specific

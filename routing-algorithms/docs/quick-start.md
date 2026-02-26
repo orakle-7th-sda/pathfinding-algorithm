@@ -58,6 +58,60 @@ ls output/charts/
 cat output/results/bellman_ford_analysis.csv
 ```
 
+## 프레임 단위 알고리즘 리플레이
+
+알고리즘 흐름을 프레임 단위로 재생하려면:
+
+```bash
+cd routing-algorithms
+
+# 트레이스(JSON) 생성
+python3 visualization/generate_traces.py \
+  --token-in ETH \
+  --token-out USDC \
+  --amount 250
+
+# 로컬 웹 서버 실행
+python3 -m http.server 8000
+```
+
+브라우저에서 `http://localhost:8000/visualization/replay_viewer.html` 접속.
+
+- 기본 제공 트레이스:
+  - `Dijkstra Routing`, `K-Best Routing` (그래프 탐색/후보 재평가)
+  - `Greedy Split`, `Convex Split`, `KKT Optimal Split` (분할 최적화)
+- 컨트롤:
+  - `Prev/Next`, `Play/Pause`, 속도 조절, 슬라이더 이동
+  - 프레임 간 diff(거리/큐 변경 항목만 강조)
+- `index.json` 자동 로드 실패 시:
+  - `output/traces/*.json` 파일을 뷰어에 직접 업로드
+
+발표용 파일(GIF/MP4) 자동 변환이 필요하면:
+
+```bash
+python3 visualization/generate_traces.py --token-in ETH --token-out USDC --amount 250
+```
+
+- 기본값으로 `output/media/`에 GIF/MP4 export를 시도한다.
+- 의존성 누락 시 `--skip-media`로 JSON만 생성 가능.
+
+## 개선된 Mock Data 추출
+
+기존 `DataGenerator` 외에, 디페그/파편화/저유동성 시나리오를 포함한 데이터셋을 추출하려면:
+
+```bash
+cd routing-algorithms
+python3 mock_data/extract_aggregator_mock_data.py \
+  --seed 42 \
+  --output output/mock-data/aggregator_enhanced_dataset.json
+```
+
+분석 자동 점검:
+
+```bash
+python3 analysis/routing_and_mock_audit.py
+```
+
 ## 예제 코드
 
 ### 단일 알고리즘 사용
@@ -132,8 +186,8 @@ python3 main.py
 차트는 생성되지 않지만, 결과 JSON은 정상 출력됩니다.
 
 ```bash
-# matplotlib 설치
-pip install matplotlib numpy
+# 차트 + trace media export 의존성 설치
+pip install matplotlib numpy imageio imageio-ffmpeg
 ```
 
 ### 느린 실행 시간

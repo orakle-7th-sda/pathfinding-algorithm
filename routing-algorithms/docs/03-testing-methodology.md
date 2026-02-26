@@ -55,7 +55,7 @@
 
 ### 1. 벤치마크 러너 (benchmarks/benchmark_runner.py)
 
-- **BenchmarkRunner(pools)**: 풀 리스트로 초기화하며, Single Path 4종 + Composite Path 5종 총 9개 알고리즘 인스턴스를 생성한다.
+- **BenchmarkRunner(pools)**: 풀 리스트로 초기화하며, Single Path 5종 + Composite Path 5종 총 10개 알고리즘 인스턴스를 생성한다.
 - **run_single_benchmark(algorithm, request)**: 한 알고리즘에 대해 `execute_with_timing(request)`를 호출하고, `BenchmarkResult`(algorithm_name, amount_out, effective_price, price_impact, execution_time_ms, gas_estimate, num_routes, improvement_vs_baseline)를 반환한다.
 - **run_scenario_benchmark(scenario_name, request)**:  
   - 먼저 Naive Brute Force를 베이스라인으로 실행해 baseline_output을 구한다.  
@@ -83,4 +83,4 @@
 
 - Mock 데이터: `DataGenerator`가 토큰 가격·DEX 설정·유동성 배수를 사용해 constant product 풀과 스왑 요청을 생성한다.
 - 벤치마크 시나리오: **extreme_benchmark.py**의 `create_extreme_scenarios()`만 사용한다. Massive Swap(1000 ETH), Extreme Swap(5000 ETH), Low Liquidity Crisis, Imbalanced Liquidity, Many DEXes Split Test, Single DEX Only 등 6가지 시나리오가 정의되어 있다. `generate_test_scenarios()`는 제거되어 사용하지 않는다.
-- Aggregator 테스트: extreme_benchmark 실행 시, 시나리오마다 해당 풀로 9개 알고리즘을 모두 실행하고, 출력량·실행 시간·베이스라인 대비 개선률·승률을 집계하며, 결과는 JSON과 PNG 차트로 저장된다.
+- Aggregator 테스트: extreme_benchmark 실행 시, 시나리오마다 해당 풀로 10개 알고리즘을 모두 실행하고, 출력량·실행 시간·베이스라인 대비 개선률·승률을 집계하며, 결과는 JSON과 PNG 차트로 저장된다.

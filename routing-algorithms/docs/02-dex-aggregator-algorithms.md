@@ -50,6 +50,16 @@
   - f = g + h로 우선순위 큐를 사용하며, spot 기준 최적 경로를 찾은 뒤 `calculate_route_output`로 실제 출력량을 계산한다.
 - **특징**: Dijkstra와 같은 “spot 최적” 경로를 찾으므로, 대량 거래 시 Naive/MultiHop보다 낮은 출력이 나올 수 있다.
 
+### 5. K-Best Routing
+
+- **파일**: `algorithms/single/k_best.py`
+- **역할**: 단일 경로 후보를 여러 개(top-k) 뽑은 뒤, **실제 거래 크기(amount_in)** 기준 `amount_out`으로 재평가해 최종 경로를 선택한다.
+- **내부 로직**:
+  - DFS로 최대 홉 제한 내 단순 경로를 생성한다.
+  - 각 경로를 fee 반영 spot 점수(`-log(spot_rate * (1-fee))`)로 정렬한다.
+  - 상위 k개 후보만 실제 `calculate_route_output`으로 다시 계산하고, 출력량이 최대인 경로를 반환한다.
+- **특징**: Dijkstra/A*의 빠른 후보 선정 장점은 유지하면서, 대량 거래에서 발생하는 spot-실거래 괴리를 줄이는 데 유리하다.
+
 ---
 
 ## Composite Path 알고리즘
@@ -108,6 +118,16 @@
   - 선택적으로 scipy의 `minimize`(SLSQP)로 동일 문제를 푸는 `_optimize_with_scipy`도 구현되어 있다.
 - **특징**: 이론적으로 AMM에 맞는 형태이며 연속 최적화라 이산화 오차가 없으나, 수치 안정성·수렴 속도는 구현·파라미터에 의존한다.
 
+### 6. KKT Optimal Split
+
+- **파일**: `algorithms/composite/kkt_split.py`
+- **역할**: constant-product AMM의 출력 함수 특성을 이용해, KKT 조건으로 **직접 페어 분할 비율**을 빠르게 계산한다.
+- **내부 로직**:
+  - 목적함수: `sum_i out_i(a_i)` 최대화, 제약: `sum_i a_i = total_amount`, `a_i >= 0`.
+  - 각 풀의 한계 출력(marginal output)이 동일해지는 KKT 조건을 이용해 `a_i(lambda)` 형태로 닫힌식 계산을 구성한다.
+  - 라그랑주 승수 `lambda`를 이분 탐색으로 풀어, 최종 allocation을 복원한다.
+- **특징**: 수치 미분 기반 gradient 방식 대비 실행 시간이 짧고, 동일 목적함수에서 안정적으로 높은 품질의 분할을 제공한다.
+
 ---
 
 ## 공통 데이터 구조
@@ -123,4 +143,6 @@ Single 계열은 “어떤 단일 경로를 고를지”, Composite 계열은 �
 
 - **Naive / Multi-Hop**: 제한된 경로(또는 홉 수 이내)를 열거한 뒤 **실제 출력량(amount_out)**을 경로마다 계산하고, 최대를 주는 경로를 선택한다. 따라서 “실제 출력 기준 최적”에 가깝다. Naive는 최대 경로 길이 4(3홉), Multi-Hop은 최대 4홉까지 탐색하므로, 최적 경로가 같은 범위 안에 있으면 둘의 결과가 일치할 수 있다.
 - **Dijkstra / A\***: 간선 가중치를 **spot price(순간 환율)**만 사용한다. 따라서 “순간 환율 기준 최적” 경로를 찾고, 그 경로에 대해 `calculate_route_output`으로 실제 출력을 계산한다. 대량 거래에서는 슬리피지 때문에 이 경로의 실제 출력이 Naive/Multi-Hop보다 **낮을 수 있어**, 차트에서 구분된다.
+- **K-Best**: spot 점수로 후보를 줄인 다음 실제 출력으로 재평가하기 때문에, Dijkstra/A*보다 대량 거래에서 더 안정적인 경로를 선택할 가능성이 높다.
 - **BFS**: 홉 수만 최소화하고 가격을 보지 않으므로, 최적이 아닌 경로를 택할 수 있어 출력이 더 낮게 나올 수 있다.
+- **KKT Split / Convex Split**: 둘 다 연속 분할 최적화 관점에서 높은 출력량을 목표로 하지만, KKT Split은 CPMM 가정에서 닫힌식+이분 탐색을 써서 계산 효율이 높다.

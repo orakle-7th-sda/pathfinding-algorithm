@@ -194,7 +194,9 @@ $RECYCLE.BIN/
 output/
 charts/
 results/
-benchmarks/
+#benchmarks/
+!routing-algorithms/benchmarks/
+!routing-algorithms/benchmarks/**
 reports/
 
 # Temporary files

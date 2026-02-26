@@ -1,0 +1,872 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Routing Algorithm Trace Replay</title>
+  <style>
+    :root {
+      --bg: #f6f8fb;
+      --panel: #ffffff;
+      --line: #d6deeb;
+      --text: #142238;
+      --muted: #5f6f86;
+      --active: #0b7f7a;
+      --danger: #b03f3f;
+      --edge: #9caac0;
+      --visited: #2a6fdb;
+      --current: #f28f3b;
+      --path: #0b7f7a;
+      --diff: #b64bb9;
+    }
+
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      background: radial-gradient(circle at 0 0, #e7f0ff 0, var(--bg) 45%);
+      color: var(--text);
+      font-family: "IBM Plex Sans", "Noto Sans KR", sans-serif;
+    }
+
+    .page {
+      max-width: 1280px;
+      margin: 0 auto;
+      padding: 18px;
+    }
+
+    .controls, .layout, .meta, .legend {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      padding: 12px;
+      margin-bottom: 12px;
+    }
+
+    .controls .row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      align-items: center;
+    }
+
+    select, button, input[type="range"] {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #fff;
+      color: var(--text);
+      padding: 8px 10px;
+      font-size: 14px;
+    }
+
+    button.primary {
+      background: var(--active);
+      color: #fff;
+      border-color: var(--active);
+    }
+
+    .layout {
+      display: grid;
+      grid-template-columns: 2fr 1fr;
+      gap: 12px;
+    }
+
+    @media (max-width: 960px) {
+      .layout { grid-template-columns: 1fr; }
+    }
+
+    .canvas-wrap {
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      padding: 8px;
+      background: #fbfcff;
+    }
+
+    canvas {
+      width: 100%;
+      height: 460px;
+      display: block;
+    }
+
+    .side {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .card {
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      padding: 10px;
+      background: #fbfcff;
+    }
+
+    .card h3 {
+      margin: 0 0 8px;
+      font-size: 14px;
+    }
+
+    .card pre {
+      margin: 0;
+      white-space: pre-wrap;
+      word-break: break-word;
+      font-size: 12px;
+      line-height: 1.4;
+      color: var(--muted);
+    }
+
+    .small {
+      font-size: 12px;
+      color: var(--muted);
+    }
+
+    .status {
+      font-size: 13px;
+      color: var(--muted);
+      margin-top: 8px;
+    }
+
+    .bar {
+      height: 20px;
+      border-radius: 6px;
+      background: linear-gradient(90deg, #2a6fdb, #0b7f7a);
+      margin: 4px 0 6px;
+    }
+
+    .legend-item {
+      display: inline-flex;
+      align-items: center;
+      margin-right: 12px;
+      font-size: 12px;
+      color: var(--muted);
+    }
+
+    .dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      margin-right: 6px;
+      border: 1px solid #fff;
+    }
+
+    .diff-added { color: #1d7a3f; font-weight: 600; }
+    .diff-removed { color: #b03f3f; font-weight: 600; }
+    .diff-updated { color: var(--diff); font-weight: 600; }
+  </style>
+</head>
+<body>
+  <div class="page">
+    <h2>Routing Algorithm Trace Replay</h2>
+
+    <div class="controls">
+      <div class="row">
+        <label for="traceSelect">Trace</label>
+        <select id="traceSelect"></select>
+        <button id="loadSelected" class="primary">Load Selected</button>
+        <input id="fileInput" type="file" accept=".json" />
+        <span class="small">`index.json` load fails 시 JSON 파일 직접 업로드</span>
+      </div>
+      <div class="row" style="margin-top:8px;">
+        <button id="prevBtn">Prev</button>
+        <button id="nextBtn">Next</button>
+        <button id="playBtn" class="primary">Play</button>
+        <button id="pauseBtn">Pause</button>
+        <label for="speedSelect">Speed</label>
+        <select id="speedSelect">
+          <option value="1200">0.5x</option>
+          <option value="700" selected>1x</option>
+          <option value="350">2x</option>
+          <option value="180">4x</option>
+        </select>
+        <label for="layoutSelect">Layout</label>
+        <select id="layoutSelect">
+          <option value="flow" selected>Flow (Source->Target)</option>
+          <option value="force">Force Directed</option>
+          <option value="circular">Circular</option>
+        </select>
+        <label for="focusSelect">Edges</label>
+        <select id="focusSelect">
+          <option value="active" selected>Active Only</option>
+          <option value="path">Best Path Only</option>
+          <option value="all">All</option>
+        </select>
+        <input id="frameSlider" type="range" min="0" max="0" value="0" style="flex:1;" />
+      </div>
+      <div id="status" class="status"></div>
+    </div>
+
+    <div class="meta">
+      <div id="metaText" class="small"></div>
+    </div>
+
+    <div class="legend">
+      <span class="legend-item"><span class="dot" style="background:var(--current);"></span>Current</span>
+      <span class="legend-item"><span class="dot" style="background:var(--visited);"></span>Visited</span>
+      <span class="legend-item"><span class="dot" style="background:#fff;border-color:var(--edge);"></span>Unvisited</span>
+      <span class="legend-item"><span class="dot" style="background:var(--path);"></span>Best Path</span>
+      <span class="legend-item"><span class="dot" style="background:var(--diff);"></span>Diff Highlight</span>
+    </div>
+
+    <div class="layout">
+      <div class="canvas-wrap">
+        <canvas id="graphCanvas" width="900" height="460"></canvas>
+      </div>
+      <div class="side">
+        <div class="card">
+          <h3>Frame Info</h3>
+          <pre id="frameInfo"></pre>
+        </div>
+        <div class="card">
+          <h3>Frame Diff (Distance/Queue)</h3>
+          <div id="diffInfo" class="small"></div>
+        </div>
+        <div class="card">
+          <h3>Distances / Queue / Result</h3>
+          <pre id="metricsInfo"></pre>
+        </div>
+        <div class="card">
+          <h3>Split Snapshot</h3>
+          <div id="splitInfo" class="small">Split trace에서 풀별 비중이 표시됩니다.</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const traceSelect = document.getElementById("traceSelect");
+    const loadSelected = document.getElementById("loadSelected");
+    const fileInput = document.getElementById("fileInput");
+    const prevBtn = document.getElementById("prevBtn");
+    const nextBtn = document.getElementById("nextBtn");
+    const playBtn = document.getElementById("playBtn");
+    const pauseBtn = document.getElementById("pauseBtn");
+    const speedSelect = document.getElementById("speedSelect");
+    const layoutSelect = document.getElementById("layoutSelect");
+    const focusSelect = document.getElementById("focusSelect");
+    const frameSlider = document.getElementById("frameSlider");
+    const statusEl = document.getElementById("status");
+    const metaText = document.getElementById("metaText");
+    const frameInfo = document.getElementById("frameInfo");
+    const diffInfo = document.getElementById("diffInfo");
+    const metricsInfo = document.getElementById("metricsInfo");
+    const splitInfo = document.getElementById("splitInfo");
+    const canvas = document.getElementById("graphCanvas");
+    const ctx = canvas.getContext("2d");
+
+    let traceData = null;
+    let frameIdx = 0;
+    let timer = null;
+    let traceIndex = [];
+    let positionCache = new Map();
+
+    function themeColor(cssVar, fallback) {
+      const val = getComputedStyle(document.documentElement).getPropertyValue(cssVar).trim();
+      return val || fallback;
+    }
+
+    function colorPalette() {
+      return {
+        edge: themeColor("--edge", "#9caac0"),
+        visited: themeColor("--visited", "#2a6fdb"),
+        current: themeColor("--current", "#f28f3b"),
+        path: themeColor("--path", "#0b7f7a"),
+        diff: themeColor("--diff", "#b64bb9"),
+      };
+    }
+
+    function setStatus(msg, isError=false) {
+      statusEl.textContent = msg;
+      statusEl.style.color = isError ? "var(--danger)" : "var(--muted)";
+    }
+
+    function clearPlay() {
+      if (timer) {
+        clearInterval(timer);
+        timer = null;
+      }
+    }
+
+    function fmt(val, digits=8) {
+      if (typeof val !== "number" || !isFinite(val)) return String(val);
+      return Number(val).toFixed(digits).replace(/\.?0+$/, "");
+    }
+
+    function edgeKey(a, b) {
+      return `${a}->${b}`;
+    }
+
+    function pathEdgeSet(path) {
+      const set = new Set();
+      if (!Array.isArray(path) || path.length < 2) return set;
+      for (let i = 0; i < path.length - 1; i++) {
+        set.add(edgeKey(path[i], path[i + 1]));
+        set.add(edgeKey(path[i + 1], path[i]));
+      }
+      return set;
+    }
+
+    function circularLayout(nodes, width, height) {
+      const cx = width / 2;
+      const cy = height / 2;
+      const radius = Math.min(width, height) * 0.36;
+      const positions = {};
+      nodes.forEach((n, i) => {
+        const ang = (2 * Math.PI * i) / Math.max(nodes.length, 1) - Math.PI / 2;
+        positions[n] = {
+          x: cx + radius * Math.cos(ang),
+          y: cy + radius * Math.sin(ang),
+        };
+      });
+      return positions;
+    }
+
+    function adjacencyFromEdges(edges) {
+      const adj = new Map();
+      edges.forEach((e) => {
+        if (!adj.has(e.from)) adj.set(e.from, []);
+        if (!adj.has(e.to)) adj.set(e.to, []);
+        adj.get(e.from).push(e.to);
+        adj.get(e.to).push(e.from);
+      });
+      return adj;
+    }
+
+    function flowLayout(nodes, edges, source, target, width, height) {
+      const adj = adjacencyFromEdges(edges);
+      const depth = {};
+      const queue = [];
+      if (source && nodes.includes(source)) {
+        depth[source] = 0;
+        queue.push(source);
+      } else if (nodes.length > 0) {
+        depth[nodes[0]] = 0;
+        queue.push(nodes[0]);
+      }
+
+      while (queue.length) {
+        const u = queue.shift();
+        const d = depth[u];
+        (adj.get(u) || []).forEach((v) => {
+          if (depth[v] === undefined) {
+            depth[v] = d + 1;
+            queue.push(v);
+          }
+        });
+      }
+
+      let maxDepth = 0;
+      nodes.forEach((n) => {
+        if (depth[n] === undefined) depth[n] = maxDepth + 1;
+        maxDepth = Math.max(maxDepth, depth[n]);
+      });
+
+      if (target && depth[target] !== undefined) {
+        maxDepth = Math.max(maxDepth, depth[target]);
+      }
+
+      const buckets = new Map();
+      nodes.forEach((n) => {
+        const d = depth[n];
+        if (!buckets.has(d)) buckets.set(d, []);
+        buckets.get(d).push(n);
+      });
+      buckets.forEach((arr) => arr.sort());
+
+      const left = 80;
+      const right = width - 80;
+      const top = 60;
+      const bottom = height - 60;
+      const usableW = Math.max(1, right - left);
+      const usableH = Math.max(1, bottom - top);
+
+      const positions = {};
+      nodes.forEach((n) => {
+        const d = depth[n];
+        const layer = buckets.get(d) || [n];
+        const idx = layer.indexOf(n);
+        const x = left + (maxDepth === 0 ? 0.5 : d / maxDepth) * usableW;
+        const y = top + ((idx + 1) / (layer.length + 1)) * usableH;
+        positions[n] = { x, y };
+      });
+
+      if (source && positions[source]) {
+        positions[source].x = left;
+      }
+      if (target && positions[target]) {
+        positions[target].x = right;
+      }
+
+      return positions;
+    }
+
+    function forceLayout(nodes, edges, width, height) {
+      const pos = circularLayout(nodes, width, height);
+      const index = new Map(nodes.map((n, i) => [n, i]));
+      const n = nodes.length;
+      if (n <= 1) return pos;
+
+      const vx = new Array(n).fill(0);
+      const vy = new Array(n).fill(0);
+      const area = width * height;
+      const k = Math.sqrt(area / n) * 0.52;
+      const edgePairs = edges
+        .map((e) => [index.get(e.from), index.get(e.to)])
+        .filter(([a, b]) => a !== undefined && b !== undefined);
+
+      for (let iter = 0; iter < 220; iter++) {
+        const fx = new Array(n).fill(0);
+        const fy = new Array(n).fill(0);
+
+        for (let i = 0; i < n; i++) {
+          for (let j = i + 1; j < n; j++) {
+            const ni = nodes[i];
+            const nj = nodes[j];
+            let dx = pos[ni].x - pos[nj].x;
+            let dy = pos[ni].y - pos[nj].y;
+            const dist = Math.max(1, Math.hypot(dx, dy));
+            const rep = (k * k) / dist;
+            dx /= dist;
+            dy /= dist;
+            fx[i] += dx * rep;
+            fy[i] += dy * rep;
+            fx[j] -= dx * rep;
+            fy[j] -= dy * rep;
+          }
+        }
+
+        edgePairs.forEach(([a, b]) => {
+          const na = nodes[a];
+          const nb = nodes[b];
+          let dx = pos[na].x - pos[nb].x;
+          let dy = pos[na].y - pos[nb].y;
+          const dist = Math.max(1, Math.hypot(dx, dy));
+          const attr = (dist * dist) / k;
+          dx /= dist;
+          dy /= dist;
+          fx[a] -= dx * attr;
+          fy[a] -= dy * attr;
+          fx[b] += dx * attr;
+          fy[b] += dy * attr;
+        });
+
+        const temperature = 14 * (1 - iter / 220);
+        for (let i = 0; i < n; i++) {
+          vx[i] = (vx[i] + fx[i] * 0.006) * 0.88;
+          vy[i] = (vy[i] + fy[i] * 0.006) * 0.88;
+          const speed = Math.max(0.001, Math.hypot(vx[i], vy[i]));
+          const sx = (vx[i] / speed) * Math.min(speed, temperature);
+          const sy = (vy[i] / speed) * Math.min(speed, temperature);
+          pos[nodes[i]].x = Math.max(36, Math.min(width - 36, pos[nodes[i]].x + sx));
+          pos[nodes[i]].y = Math.max(36, Math.min(height - 36, pos[nodes[i]].y + sy));
+        }
+      }
+
+      return pos;
+    }
+
+    function getNodePositions(frame) {
+      if (!traceData || !traceData.graph) return {};
+      const nodes = traceData.graph.nodes || [];
+      const edges = traceData.graph.edges || [];
+      const request = (traceData.metadata && traceData.metadata.request) || {};
+      const src = request.token_in || (frame && frame.current_node) || null;
+      const dst = request.token_out || null;
+      const mode = layoutSelect.value || "flow";
+      const key = [
+        mode,
+        src || "-",
+        dst || "-",
+        nodes.join(","),
+        edges.map((e) => `${e.from}->${e.to}`).join(","),
+      ].join("|");
+
+      if (positionCache.has(key)) return positionCache.get(key);
+
+      let positions;
+      if (mode === "circular") {
+        positions = circularLayout(nodes, canvas.width, canvas.height);
+      } else if (mode === "force") {
+        positions = forceLayout(nodes, edges, canvas.width, canvas.height);
+      } else {
+        positions = flowLayout(nodes, edges, src, dst, canvas.width, canvas.height);
+      }
+      positionCache.set(key, positions);
+      return positions;
+    }
+
+    function computeDiff(prevFrame, currFrame) {
+      const result = {
+        changedDistances: [],
+        changedDistanceNodes: new Set(),
+        queueAdded: [],
+        queueRemoved: [],
+        queueTokensChanged: new Set(),
+      };
+      if (!currFrame) return result;
+
+      const prevDistances = (prevFrame && prevFrame.distances) || {};
+      const currDistances = currFrame.distances || {};
+      const keys = new Set([...Object.keys(prevDistances), ...Object.keys(currDistances)]);
+      keys.forEach((k) => {
+        const pv = prevDistances[k];
+        const cv = currDistances[k];
+        if (pv === undefined && cv !== undefined) {
+          result.changedDistances.push({ token: k, type: "added", prev: null, curr: cv });
+          result.changedDistanceNodes.add(k);
+        } else if (pv !== undefined && cv === undefined) {
+          result.changedDistances.push({ token: k, type: "removed", prev: pv, curr: null });
+          result.changedDistanceNodes.add(k);
+        } else if (pv !== cv) {
+          result.changedDistances.push({ token: k, type: "updated", prev: pv, curr: cv });
+          result.changedDistanceNodes.add(k);
+        }
+      });
+
+      const prevQueue = (prevFrame && prevFrame.priority_queue) || [];
+      const currQueue = currFrame.priority_queue || [];
+      const sig = (entry) => `${entry.token}|${Number(entry.distance).toFixed(10)}`;
+      const prevMap = new Map(prevQueue.map((e) => [sig(e), e]));
+      const currMap = new Map(currQueue.map((e) => [sig(e), e]));
+
+      currMap.forEach((entry, key) => {
+        if (!prevMap.has(key)) {
+          result.queueAdded.push(entry);
+          result.queueTokensChanged.add(entry.token);
+        }
+      });
+      prevMap.forEach((entry, key) => {
+        if (!currMap.has(key)) {
+          result.queueRemoved.push(entry);
+          result.queueTokensChanged.add(entry.token);
+        }
+      });
+      return result;
+    }
+
+    function renderDiff(diff) {
+      if (!diff) {
+        diffInfo.textContent = "Diff unavailable.";
+        return;
+      }
+      const sections = [];
+      if (!diff.changedDistances.length) {
+        sections.push("<div>No distance changes.</div>");
+      } else {
+        sections.push("<div><b>Distance changes</b></div>");
+        diff.changedDistances.slice(0, 12).forEach((item) => {
+          const cls =
+            item.type === "added" ? "diff-added" :
+            item.type === "removed" ? "diff-removed" : "diff-updated";
+          sections.push(
+            `<div class="${cls}">[${item.type}] ${item.token}: ${item.prev ?? "-"} -> ${item.curr ?? "-"}</div>`
+          );
+        });
+        if (diff.changedDistances.length > 12) {
+          sections.push(`<div>... ${diff.changedDistances.length - 12} more</div>`);
+        }
+      }
+
+      if (!diff.queueAdded.length && !diff.queueRemoved.length) {
+        sections.push("<div style='margin-top:6px;'>No queue changes.</div>");
+      } else {
+        sections.push("<div style='margin-top:6px;'><b>Queue changes</b></div>");
+        diff.queueAdded.slice(0, 8).forEach((entry) => {
+          sections.push(
+            `<div class="diff-added">[added] ${entry.token} @ ${fmt(entry.distance, 8)}</div>`
+          );
+        });
+        diff.queueRemoved.slice(0, 8).forEach((entry) => {
+          sections.push(
+            `<div class="diff-removed">[removed] ${entry.token} @ ${fmt(entry.distance, 8)}</div>`
+          );
+        });
+      }
+
+      diffInfo.innerHTML = sections.join("");
+    }
+
+    function drawGraph(frame, diff) {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      if (!traceData || !traceData.graph || !traceData.graph.nodes) return;
+
+      const nodes = traceData.graph.nodes;
+      const edges = traceData.graph.edges || [];
+      const colors = colorPalette();
+      const positions = getNodePositions(frame);
+
+      const highlightEdge = frame.edge_highlight
+        ? edgeKey(frame.edge_highlight.from, frame.edge_highlight.to)
+        : null;
+      const bestPath = frame.best_path || (traceData.result && traceData.result.path) || [];
+      const bestPathSet = pathEdgeSet(bestPath);
+      const diffDistanceNodes = (diff && diff.changedDistanceNodes) || new Set();
+      const diffQueueTokens = (diff && diff.queueTokensChanged) || new Set();
+      const visited = new Set(frame.visited || []);
+      const current = frame.current_node;
+      const edgeMode = focusSelect.value || "active";
+
+      function shouldDrawEdge(e) {
+        const key = edgeKey(e.from, e.to);
+        if (edgeMode === "all") return true;
+        if (edgeMode === "path") {
+          return bestPathSet.has(key) || highlightEdge === key;
+        }
+        return (
+          bestPathSet.has(key) ||
+          highlightEdge === key ||
+          visited.has(e.from) ||
+          visited.has(e.to) ||
+          current === e.from ||
+          current === e.to
+        );
+      }
+
+      edges.forEach((e) => {
+        if (!shouldDrawEdge(e)) return;
+        const p1 = positions[e.from];
+        const p2 = positions[e.to];
+        if (!p1 || !p2) return;
+        let color = colors.edge;
+        let width = 1.2;
+        let alpha = edgeMode === "all" ? 0.45 : 0.72;
+        if (bestPathSet.has(edgeKey(e.from, e.to))) {
+          color = colors.path;
+          width = 3;
+          alpha = 0.96;
+        }
+        if (highlightEdge === edgeKey(e.from, e.to)) {
+          color = colors.current;
+          width = 3.5;
+          alpha = 1.0;
+        }
+        ctx.strokeStyle = color;
+        ctx.lineWidth = width;
+        ctx.globalAlpha = alpha;
+        ctx.beginPath();
+        ctx.moveTo(p1.x, p1.y);
+        ctx.lineTo(p2.x, p2.y);
+        ctx.stroke();
+        ctx.globalAlpha = 1.0;
+      });
+
+      nodes.forEach((node) => {
+        const p = positions[node];
+        let fill = "#fff";
+        let stroke = colors.edge;
+        if (visited.has(node)) {
+          fill = colors.visited;
+          stroke = colors.visited;
+        }
+        if (current === node) {
+          fill = colors.current;
+          stroke = colors.current;
+        }
+        if (bestPath.includes(node) && current !== node) {
+          fill = colors.path;
+          stroke = colors.path;
+        }
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, 20, 0, 2 * Math.PI);
+        ctx.fillStyle = fill;
+        ctx.fill();
+        ctx.strokeStyle = stroke;
+        ctx.lineWidth = 2;
+        ctx.stroke();
+        if (diffDistanceNodes.has(node) || diffQueueTokens.has(node)) {
+          ctx.beginPath();
+          ctx.arc(p.x, p.y, 24, 0, 2 * Math.PI);
+          ctx.strokeStyle = colors.diff;
+          ctx.lineWidth = 2;
+          ctx.stroke();
+        }
+        const isWhite = fill.toLowerCase() === "#fff" || fill.toLowerCase() === "#ffffff";
+        ctx.fillStyle = isWhite ? "#1d2b3e" : "#fff";
+        ctx.font = "bold 12px sans-serif";
+        ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
+        ctx.fillText(node, p.x, p.y);
+      });
+    }
+
+    function renderSplitInfo(frame) {
+      if (!traceData) return;
+      if (traceData.metadata.trace_kind !== "split_optimization") {
+        splitInfo.textContent = "현재 trace는 split 최적화 trace가 아닙니다.";
+        return;
+      }
+      const pools = frame.per_pool_results || [];
+      if (!pools.length) {
+        splitInfo.textContent = "이 프레임에는 split 비중 데이터가 없습니다.";
+        return;
+      }
+
+      splitInfo.innerHTML = "";
+      pools.forEach((p) => {
+        const row = document.createElement("div");
+        const title = document.createElement("div");
+        title.textContent = `${p.pool_id} (${p.dex}) - in ${fmt(p.amount_in, 4)}, out ${fmt(p.amount_out, 4)}`;
+        title.style.fontSize = "12px";
+        title.style.marginTop = "4px";
+        const bar = document.createElement("div");
+        bar.className = "bar";
+        bar.style.width = `${Math.max(2, Math.min(100, p.share_pct || 0))}%`;
+        row.appendChild(title);
+        row.appendChild(bar);
+        splitInfo.appendChild(row);
+      });
+    }
+
+    function renderFrame() {
+      if (!traceData || !traceData.frames || traceData.frames.length === 0) return;
+      const frame = traceData.frames[frameIdx];
+      const prevFrame = frameIdx > 0 ? traceData.frames[frameIdx - 1] : null;
+      const diff = computeDiff(prevFrame, frame);
+      frameSlider.max = traceData.frames.length - 1;
+      frameSlider.value = frameIdx;
+
+      metaText.textContent =
+        `Algorithm: ${traceData.metadata.algorithm} | Kind: ${traceData.metadata.trace_kind} | ` +
+        `Request: ${traceData.metadata.request.token_in}->${traceData.metadata.request.token_out} ${traceData.metadata.request.amount_in}`;
+
+      frameInfo.textContent = JSON.stringify(
+        {
+          step: frame.step,
+          event: frame.event,
+          description: frame.description,
+          current_node: frame.current_node,
+          edge_highlight: frame.edge_highlight || null,
+          best_path: frame.best_path || null,
+        },
+        null,
+        2
+      );
+
+      metricsInfo.textContent = JSON.stringify(
+        {
+          visited: frame.visited || [],
+          distances: frame.distances || {},
+          priority_queue: frame.priority_queue || [],
+          estimated_amount_out: frame.estimated_amount_out || null,
+          diff_summary: {
+            changed_distances: diff.changedDistances.length,
+            queue_added: diff.queueAdded.length,
+            queue_removed: diff.queueRemoved.length,
+          },
+          result: traceData.result || {},
+        },
+        null,
+        2
+      );
+
+      renderDiff(diff);
+      drawGraph(frame, diff);
+      renderSplitInfo(frame);
+      setStatus(`Frame ${frameIdx + 1}/${traceData.frames.length} | ${frame.event}`);
+    }
+
+    function setTrace(data) {
+      traceData = data;
+      frameIdx = 0;
+      positionCache = new Map();
+      clearPlay();
+      renderFrame();
+    }
+
+    async function loadTraceFromPath(path) {
+      try {
+        const res = await fetch(path);
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const data = await res.json();
+        setTrace(data);
+      } catch (err) {
+        setStatus(`Trace load failed (${path}): ${err.message}`, true);
+      }
+    }
+
+    async function loadTraceIndex() {
+      const indexPath = "../output/traces/index.json";
+      try {
+        const res = await fetch(indexPath);
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const data = await res.json();
+        traceIndex = data.traces || [];
+        traceSelect.innerHTML = "";
+        traceIndex.forEach((t, idx) => {
+          const option = document.createElement("option");
+          option.value = idx;
+          option.textContent = `${t.name}`;
+          traceSelect.appendChild(option);
+        });
+        if (traceIndex.length > 0) {
+          await loadTraceFromPath(traceIndex[0].path);
+          setStatus("Loaded trace index.");
+        } else {
+          setStatus("Trace index loaded, but no trace entries found.", true);
+        }
+      } catch (err) {
+        setStatus("index.json 자동 로드 실패. JSON 파일을 직접 업로드하세요.", true);
+      }
+    }
+
+    loadSelected.addEventListener("click", async () => {
+      const idx = Number(traceSelect.value || 0);
+      if (!traceIndex[idx]) return;
+      await loadTraceFromPath(traceIndex[idx].path);
+    });
+
+    prevBtn.addEventListener("click", () => {
+      if (!traceData) return;
+      frameIdx = Math.max(0, frameIdx - 1);
+      renderFrame();
+    });
+
+    nextBtn.addEventListener("click", () => {
+      if (!traceData) return;
+      frameIdx = Math.min(traceData.frames.length - 1, frameIdx + 1);
+      renderFrame();
+    });
+
+    playBtn.addEventListener("click", () => {
+      if (!traceData) return;
+      clearPlay();
+      timer = setInterval(() => {
+        if (!traceData) return;
+        if (frameIdx >= traceData.frames.length - 1) {
+          clearPlay();
+          return;
+        }
+        frameIdx += 1;
+        renderFrame();
+      }, Number(speedSelect.value));
+    });
+
+    pauseBtn.addEventListener("click", () => clearPlay());
+
+    frameSlider.addEventListener("input", () => {
+      if (!traceData) return;
+      frameIdx = Number(frameSlider.value);
+      renderFrame();
+    });
+
+    layoutSelect.addEventListener("change", () => {
+      positionCache = new Map();
+      renderFrame();
+    });
+    focusSelect.addEventListener("change", () => renderFrame());
+
+    fileInput.addEventListener("change", async (e) => {
+      const file = e.target.files && e.target.files[0];
+      if (!file) return;
+      try {
+        const text = await file.text();
+        const data = JSON.parse(text);
+        setTrace(data);
+        setStatus(`Loaded trace from file: ${file.name}`);
+      } catch (err) {
+        setStatus(`파일 파싱 실패: ${err.message}`, true);
+      }
+    });
+
+    loadTraceIndex();
+  </script>
+</body>
+</html>

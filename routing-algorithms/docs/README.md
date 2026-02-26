@@ -23,6 +23,7 @@
 - [03-testing-methodology.md](03-testing-methodology.md) - 테스트 방법론
 - [results.md](results.md) - Bellman-Ford 벤치마크 결과
 - [04-data-analysis-and-conclusions.md](04-data-analysis-and-conclusions.md) - 데이터 분석 및 결론
+- [06-trace-replay-visualizer.md](06-trace-replay-visualizer.md) - 프레임 단위 리플레이 시각화
 
 ## 프레젠테이션
 
@@ -31,7 +32,7 @@
 
 ---
 
-**총 14개 문서**
+**총 15개 문서**
 
 문서 네이밍 규칙:
 - kebab-case (소문자-하이픈)
